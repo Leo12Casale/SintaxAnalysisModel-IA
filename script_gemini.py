@@ -86,8 +86,8 @@ def analizar_codigo_sql(codigo_sql):
 def insertar_resultado(connection, nombre_procedimiento, malas_practicas, recomendaciones):
     try:
         consulta = """
-        INSERT INTO ZZ_AnalisisSintaxisSP_IA (NombreProcedimiento, MalasPracticas, Recomendaciones)
-        VALUES (?, ?, ?);
+        INSERT INTO ZZ_AnalisisSintaxisSP_IA (Modelo, NombreProcedimiento, MalasPracticas, Recomendaciones)
+        VALUES ('Gemini', ?, ?, ?);
         """
         cursor = connection.cursor()
         

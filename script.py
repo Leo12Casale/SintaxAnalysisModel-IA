@@ -58,7 +58,6 @@ def analizar_codigo_sql(codigo_sql):
         resultado = response.generations[0].text.strip()
         
         # Dividir el resultado en malas prácticas y recomendaciones
-        print(resultado)
         return dividir_respuesta_api(resultado)
 
     except Exception as e:
@@ -85,8 +84,8 @@ def dividir_respuesta_api(respuesta_api):
 def insertar_resultado(connection, nombre_procedimiento, malas_practicas, recomendaciones):
     try:
         consulta = """
-        INSERT INTO ZZ_AnalisisSintaxisSP_IA (NombreProcedimiento, MalasPracticas, Recomendaciones)
-        VALUES (?, ?, ?);
+        INSERT INTO ZZ_AnalisisSintaxisSP_IA (Modelo, NombreProcedimiento, MalasPracticas, Recomendaciones)
+        VALUES ('Cohere', ?, ?, ?);
         """
         cursor = connection.cursor()
         
