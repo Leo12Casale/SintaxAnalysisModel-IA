@@ -4,21 +4,28 @@ import os
 from dotenv import load_dotenv
 
 # Cargar el archivo .env desde la raíz del proyecto
-load_dotenv()
+load_dotenv('.env.tersuave')
 
 # Configura tu clave de API de Cohere
 gemini_api_key = os.getenv('API_KEY_GEMINI')
 genai.configure(api_key=gemini_api_key)
 
-# Configuración de la conexión a SQL Server
-server = os.getenv('DB_SERVER')
-database = os.getenv('DB_DATABASE')
-username = os.getenv('DB_USERNAME')
-password = os.getenv('DB_PASSWORD')
-connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+# Configuración de la conexión a SQL serverDW
+serverDW = os.getenv('DB_serverDW')
+databaseDW = os.getenv('DB_databaseDW')
+usernameDW = os.getenv('DB_usernameDW')
+passwordDW = os.getenv('DB_passwordDW')
+connection_stringDW = f'DRIVER={{ODBC Driver 17 for SQL server}};SERVER={serverDW};DATABASE={databaseDW};UID={usernameDW};PWD={passwordDW}'
 
 #Creación del modelo
-model = genai.GenerativeModel('gemini-1.5-flash')
+generation_config = {
+    "temperature": 0.1,
+    "max_output_tokens": 500
+}
+model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        generation_config=generation_config
+    )
 
 # Función para extraer el código de los procedimientos almacenados
 def obtener_store_procedures(connection):
@@ -27,7 +34,16 @@ def obtener_store_procedures(connection):
         SELECT ROUTINE_NAME, ROUTINE_DEFINITION
         FROM INFORMATION_SCHEMA.ROUTINES
         WHERE ROUTINE_TYPE = 'PROCEDURE'
-        AND ROUTINE_NAME='JOB_A_EJECUTAR_NIFI';
+        AND (ROUTINE_NAME='sp_gd_FAC_Costo_Consumo'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Consumo_Subcontratados'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Demanda'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Formula'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Formula_Estructura_v2'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Formula_Resumen'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Ingreso_Subcontratacion'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Margen'
+            OR ROUTINE_NAME='sp_gd_FAC_Costo_Ultima_Compra'
+            );
         """
         cursor = connection.cursor()
         cursor.execute(consulta)
@@ -55,8 +71,8 @@ def dividir_respuesta_api(respuesta_api):
 
 
 def analizar_codigo_sql(codigo_sql):
-    prompt = f"""
-    Analiza el siguiente procedimiento almacenado de SQL Server para ver si posee malas prácticas de desarrollo de software para el lenguaje Transact SQL (T-SQL).
+    promptSQL = f"""
+    Analiza el siguiente procedimiento almacenado de SQL serverDW para ver si posee malas prácticas de desarrollo de software para el lenguaje Transact SQL (T-SQL).
     Describe cualquier mala práctica como variables y filtros de querys con valores hardcodeados, acoplamiento entre las funciones que implementa cada store procedure, baja cohesión, gran longitud de código, etc.
     Por cada mala práctica, proporciona sugerencia/s de mejora para corregir los problemas detectados.
     
@@ -72,7 +88,7 @@ def analizar_codigo_sql(codigo_sql):
 
     try:
         # Llamada a la API de Cohere
-        response =  model.generate_content(prompt)
+        response =  model.generate_content(promptSQL)
 
         # Segmentar respuesta
         malas_practicas, recomendaciones = dividir_respuesta_api(response.text)
@@ -84,26 +100,32 @@ def analizar_codigo_sql(codigo_sql):
 
 # Función para insertar el análisis en la base de datos
 def insertar_resultado(connection, nombre_procedimiento, malas_practicas, recomendaciones):
+    serverSTG = os.getenv('DB_serverSTG')
+    databaseSTG = os.getenv('DB_DATABASESTG')
+    usernameSTG = os.getenv('DB_usernameSTG')
+    passwordSTG = os.getenv('DB_passwordSTG')
+    connection_stringSTG = f'DRIVER={{ODBC Driver 17 for SQL server}};SERVER={serverSTG};DATABASE={databaseSTG};UID={usernameSTG};PWD={passwordSTG}'
+    connectionSTG = pyodbc.connect(connection_stringSTG)
     try:
         consulta = """
-        INSERT INTO ZZ_AnalisisSintaxisSP_IA (Modelo, NombreProcedimiento, MalasPracticas, Recomendaciones)
+        INSERT INTO [DDD].[AnalisisSintaxisSP_IA] (Modelo, NombreProcedimiento, MalasPracticas, Recomendaciones)
         VALUES ('Gemini', ?, ?, ?);
         """
-        cursor = connection.cursor()
+        cursorSTG = connectionSTG.cursor()
         
         # Insertar cada mala práctica con su recomendación
         for mala_practica, recomendacion in zip(malas_practicas, recomendaciones):
             if mala_practica == '## Malas prácticas:':
                 continue
-            cursor.execute(consulta, (nombre_procedimiento, mala_practica.strip(), recomendacion.strip()))
+            cursorSTG.execute(consulta, (nombre_procedimiento, mala_practica.strip(), recomendacion.strip()))
         
-        connection.commit()
+        connectionSTG.commit()
     except pyodbc.Error as e:
         print(f"Error al insertar resultados en la base de datos: {e}")
     
 # Conexión a la base de datos
 try:
-    connection = pyodbc.connect(connection_string)
+    connection = pyodbc.connect(connection_stringDW)
 except pyodbc.Error as e:
     print(f"Error al conectar a la base de datos: {e}")
     connection = None
